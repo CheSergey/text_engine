@@ -4,15 +4,16 @@ import openai as opa
 import dotenv as dtv
 import os
 import json
+import tiktoken as tikt 
 
 dtv.load_dotenv(".env", override=True)
 api_key = os.getenv("OPENAI_API_KEY")
 client = opa.OpenAI(api_key = api_key)
 
-def main(settings, client):
+def main(settings, client, model_prices):
     main_choice = show_main_menu()
     if main_choice == 1:
-        translate_document_flow(settings, client)
+        translate_document_flow(settings, client, model_prices)
     elif main_choice == 2:
         correction_document_flow()
     elif main_choice == 3:
@@ -35,7 +36,7 @@ def show_main_menu():
             continue
         return choice
 
-def translate_document_flow(settings, client):
+def translate_document_flow(settings, client, model_prices):
     chunks_from_json = []
     json_data = []
     while True:
@@ -49,6 +50,11 @@ def translate_document_flow(settings, client):
                 return True
             blocks = process_text(text)
             chunks = chunk_creation(blocks, settings["max_chars"])
+            if settings["debug_mode"] == False:   
+                is_price_estimation = price_estimation(text, prompt_text, chunks, settings, model_prices)
+                if not is_price_estimation:
+                    print("Перевод отменен.")
+                    return None
             translated_chunks, translation_error = translator(chunks, settings, client, prompt_text, chunks_from_json, json_data)
             if translation_error == True:
                 is_continue = is_restore_process()
@@ -70,7 +76,7 @@ def translate_document_flow(settings, client):
             translation_menu_settings_workflow(settings)
         elif translation_menu_choice == 3:
             return
-            
+
 def show_translation_menu():
     while True:
         choice = input("\n=== Lingua Engine ===\n\n1. Загрузить документ\n2. Дополнительные настройки\n3. Назад\n\nВаш выбор:").strip() # чанк - это кусок текста 
@@ -87,7 +93,7 @@ def show_translation_menu():
 def translation_menu_settings_workflow(settings):
     while True:
         choice = show_translation_menu_settings(settings)
-        if choice == 11:
+        if choice == 10:
             return
         apply_translate_settings(settings, choice)
 
@@ -101,13 +107,12 @@ def show_translation_menu_settings(settings):
     f"2. Дебаггинг:{settings['debug_mode']}\n"
     f"3. Объем чанка:{settings['max_chars']}\n"
     f"4. Модель:{settings['model']}\n"
-    f"5. Temperature:{settings['temperature']}\n"
-    f"6. Межстрочный интервал:{settings['line_spacing']}\n"
-    f"7. Интервал до:{settings['space_before']}\n"
-    f"8. Интервал после:{settings['space_after']}\n"
-    f"9. Шрифт:{settings['font_name']}\n"
-    f"10. Размер шрифта:{settings['font_size']}\n"
-    f"11. Назад\n\n"
+    f"5. Межстрочный интервал:{settings['line_spacing']}\n"
+    f"6. Интервал до:{settings['space_before']}\n"
+    f"7. Интервал после:{settings['space_after']}\n"
+    f"8. Шрифт:{settings['font_name']}\n"
+    f"9. Размер шрифта:{settings['font_size']}\n"
+    f"10. Назад\n\n"
 
     f"Ваш выбор: "
 ).strip()
@@ -116,8 +121,8 @@ def show_translation_menu_settings(settings):
         except:
             print("\n*** Это не число. Выберите число. ***")
             continue
-        if not (1 <= choice <= 11):
-            print("*** Введите число от 1 до 11 ***")
+        if not (1 <= choice <= 10):
+            print("*** Введите число от 1 до 10 ***")
             continue
         return choice
 
@@ -127,12 +132,18 @@ settings = {
     "max_chars": 3000,
     "language": "English",
     "model": "gpt-5.5",
-    "temperature": 0.2,
     "space_before": 0,
     "space_after": 0,
     "font_name": "Times New Roman",
     "font_size": 12,
     "line_spacing": 1.15
+}
+
+model_prices = {
+    "gpt-5.5": {
+        "input": 5,
+        "output": 30
+    }
 }
 
 def apply_translate_settings(settings, choice):
@@ -173,20 +184,7 @@ def apply_translate_settings(settings, choice):
                 continue
             settings["model"] = model
             break
-    if choice == 5: 
-        while True:    
-            temperature = input("Введите параметр temperature (от 0 до 2):").strip()
-            try:
-                temperature = float(temperature)
-            except:
-                print("*** Это не число. Введите число. ***")
-                continue
-            if not (0 <= temperature <= 2):
-                print("*** Введите число от 0 до 2 ***")
-                continue
-            settings["temperature"] = temperature
-            break
-    if choice == 6:
+    if choice == 5:
         while True:    
             line_spacing = input("Введите межстрочный интервал (от 0 до 3):").strip()
             try:
@@ -199,7 +197,7 @@ def apply_translate_settings(settings, choice):
                 continue
             settings["line_spacing"] = line_spacing
             break
-    if choice == 7:
+    if choice == 6:
         while True:    
             space_before = input("Введите отступы до (от 0 до 10):").strip()
             try:
@@ -212,7 +210,7 @@ def apply_translate_settings(settings, choice):
                 continue
             settings["space_before"] = space_before
             break
-    if choice == 8:
+    if choice == 7:
         while True:    
             space_after = input("Введите отступы после (от 0 до 10):").strip()
             try:
@@ -225,7 +223,7 @@ def apply_translate_settings(settings, choice):
                 continue
             settings["space_after"] = space_after
             break
-    if choice == 9:
+    if choice == 8:
         while True:    
             font_name = input("Введите название шрифта:").strip()
             try:
@@ -235,7 +233,7 @@ def apply_translate_settings(settings, choice):
                 continue
             settings["font_name"] = font_name
             break
-    if choice == 10:
+    if choice == 9:
         while True:
             font_size = input("Введите размер шрифта:").strip()  
             try:
@@ -416,7 +414,6 @@ def apply_format_settings(settings, choice):
             break
     return settings
 
-
 def getting_file_name_input():
     while True:
         file_name_input = input("Введите название файла с текстом для перевода, включительно формата (.txt) или (.docx). Для выхода введите (esc): ").strip()
@@ -561,6 +558,27 @@ def chunk_creation(blocks, max_chars):
     if not chunk == "":
         chunks.append(chunk)     
     return chunks
+
+def price_estimation(text_for_chunks, prompt_text, chunks, settings, model_prices):
+    if settings["model"] not in model_prices:
+        print("Цена для этой модели неизвестна.")
+        return False
+    input_price = model_prices[settings["model"]]["input"]
+    output_price = model_prices[settings["model"]]["output"]
+    encoding = tikt.get_encoding("cl100k_base")
+    text_tokens = len(encoding.encode(text_for_chunks))
+    prompt_tokens = len(encoding.encode(prompt_text))
+    input_tokens = text_tokens + prompt_tokens * len(chunks)
+    output_tokens = input_tokens * 1.1
+    price = input_tokens / 1_000_000 * input_price + output_tokens / 1_000_000 * output_price
+    while True:
+        choice = input(f"Примерная стоимость перевода: {price:.2f}$. Желаете продолжить? Да/Нет\nВаш выбор: ").strip()
+        if choice.lower().startswith("да"):
+            return True
+        elif choice.lower().startswith("нет"):
+            return False
+        else:
+            print("Введите да или нет.")
 
 def translator(chunks, settings, client, prompt_text, chunk_from_json, json_data):
     translated_chunks = []
@@ -718,6 +736,6 @@ def translated_document_saver_docx(document, output_file_name):
     document.save(output_file_name)
 
 while True:
-    should_continue = main(settings, client)
+    should_continue = main(settings, client, model_prices)
     if not should_continue:
         break
